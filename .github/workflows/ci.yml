@@ -1,0 +1,160 @@
+# CI/CD: three check jobs on every push and PR, deploy + end-to-end test on main.
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "postman/**"
+      - "examples/**"
+      - "openapi.yaml"
+
+permissions:
+  contents: read
+
+env:
+  AWS_DEFAULT_REGION: us-east-1
+  PYTHON_VERSION: "3.12"
+  TF_VERSION: "1.9.8"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # gitleaks scans history
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - run: pip install -q -r requirements-dev.txt "bandit[toml]"
+      - name: lint
+        run: |
+          ruff check src tests
+          ruff format --check src tests
+      - name: security
+        run: bandit -r src -ll -q
+      - name: secrets
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest \
+            detect --source /repo --redact --exit-code 1 --config /repo/.gitleaks.toml
+      - name: test
+        run: pytest --cov=src --cov-report=xml --cov-report=term-missing -m "not integration"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: coverage
+          path: coverage.xml
+          retention-days: 7
+
+  terraform:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: terraform
+    env:
+      TF_PLUGIN_CACHE_DIR: ${{ github.workspace }}/.tf-plugin-cache
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - uses: actions/cache@v6
+        with:
+          path: .tf-plugin-cache
+          key: tf-${{ runner.os }}-${{ hashFiles('terraform/**/versions.tf') }}
+      - run: mkdir -p "$TF_PLUGIN_CACHE_DIR"
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+      - uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          github_token: ${{ github.token }}
+          working_directory: terraform
+          additional_args: --minimum-severity HIGH
+      - uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform,cloudformation
+          config_file: .checkov.yaml
+
+  sam:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: aws-actions/setup-sam@v3
+        with:
+          use-installer: true
+      - run: sam validate --lint
+      - uses: actions/cache@v6
+        with:
+          path: .aws-sam/cache
+          key: sam-${{ runner.os }}-${{ hashFiles('requirements.txt', 'template.yaml') }}
+      - run: sam build --cached --parallel
+      - uses: actions/upload-artifact@v7
+        if: github.event_name == 'push' # only needed by deploy
+        with:
+          name: sam-build
+          path: .aws-sam/build/
+          retention-days: 1
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [python, terraform, sam]
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: sam-build
+          path: .aws-sam/build/
+      - uses: aws-actions/setup-sam@v3
+        with:
+          use-installer: true
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: github-${{ github.run_id }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+      - name: read stack name from samconfig.toml
+        id: cfg
+        run: |
+          STACK=$(python3 -c 'import tomllib; print(tomllib.load(open("samconfig.toml","rb"))["default"]["global"]["parameters"]["stack_name"])')
+          test -n "$STACK" || { echo "stack_name missing in samconfig.toml"; exit 1; }
+          echo "stack=$STACK" >> "$GITHUB_OUTPUT"
+      - name: sam deploy
+        run: sam deploy --no-confirm-changeset --no-fail-on-empty-changeset
+      - name: postman collection (newman)
+        run: |
+          STACK="${{ steps.cfg.outputs.stack }}"
+          out() { aws cloudformation describe-stacks --stack-name "$STACK" --query "Stacks[0].Outputs[?OutputKey=='$1'].OutputValue" --output text; }
+          PW=$(aws ssm get-parameter --name "$(out DemoUserPasswordParameter)" --with-decryption --query Parameter.Value --output text)
+          npx --yes newman run postman/allianz-vpc-provisioner.postman_collection.json \
+            --env-var "apiEndpoint=$(out ApiEndpoint)" --env-var "userPoolClientId=$(out UserPoolClientId)" \
+            --env-var "password=$PW" --delay-request 6500 --reporters cli
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements-dev.txt
+      - name: end-to-end test
+        env:
+          STACK_NAME: ${{ steps.cfg.outputs.stack }}
+        run: |
+          pip install -q -r requirements-dev.txt
+          pytest -q -m integration tests/integration -p no:cacheprovider

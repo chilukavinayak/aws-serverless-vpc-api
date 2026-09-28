@@ -1,0 +1,14 @@
+$kind: http-request
+name: Invalid CIDR -> 400
+url: "{{apiEndpoint}}/vpcs"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: '{ "name": "bad", "cidr_block": "10.20.0.0/8", "subnets": [ { "cidr_block": "10.20.1.0/24" } ] }'
+scripts:
+  - type: afterResponse
+    code: pm.test('400 validation_error', () => { pm.response.to.have.status(400); pm.expect(pm.response.json().error).to.eql('validation_error'); });
+    language: text/javascript
+order: 2000

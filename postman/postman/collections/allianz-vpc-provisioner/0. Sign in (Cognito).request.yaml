@@ -1,0 +1,23 @@
+$kind: http-request
+url: https://cognito-idp.{{region}}.amazonaws.com/
+method: POST
+headers:
+  Content-Type: application/x-amz-json-1.1
+  X-Amz-Target: AWSCognitoIdentityProviderService.InitiateAuth
+body:
+  type: text
+  content: |-
+    {
+      "AuthFlow": "USER_PASSWORD_AUTH",
+      "ClientId": "{{userPoolClientId}}",
+      "AuthParameters": { "USERNAME": "{{username}}", "PASSWORD": "{{password}}" }
+    }
+auth:
+  type: noauth
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('signed in', () => pm.response.to.have.status(200));
+      pm.collectionVariables.set('idToken', pm.response.json().AuthenticationResult.IdToken);
+    language: text/javascript
+order: 2000

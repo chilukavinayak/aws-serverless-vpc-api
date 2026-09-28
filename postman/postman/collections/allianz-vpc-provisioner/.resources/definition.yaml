@@ -1,0 +1,18 @@
+$kind: collection
+description: "Serverless VPC provisioning API. Run 'Sign in' first: it stores the Cognito ID token in {{idToken}}, which every other request sends as Authorization. Set {{password}} to the value from `make demo-password`."
+variables:
+  apiEndpoint: https://77jrhk1spb.execute-api.us-east-1.amazonaws.com/dev
+  region: us-east-1
+  userPoolClientId: 7aitg14m51vukf8h2h2j6cr241
+  username: demo@example.com
+  password: ""
+  idToken: ""
+  vpcId: ""
+auth:
+  - id: 3aefd043-9adb-447d-8527-a8075b37c1cf
+    type: apikey
+    name: apikey auth
+    credentials:
+      key: Authorization
+      value: "{{idToken}}"
+      in: header

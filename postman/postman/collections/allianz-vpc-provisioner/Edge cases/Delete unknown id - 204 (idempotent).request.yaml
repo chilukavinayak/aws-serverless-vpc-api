@@ -1,0 +1,9 @@
+$kind: http-request
+name: Delete unknown id -> 204 (idempotent)
+url: "{{apiEndpoint}}/vpcs/00000000-0000-0000-0000-000000000000"
+method: DELETE
+scripts:
+  - type: afterResponse
+    code: pm.test('204', () => pm.response.to.have.status(204));
+    language: text/javascript
+order: 6000

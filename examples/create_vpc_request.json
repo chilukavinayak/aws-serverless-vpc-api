@@ -1,0 +1,27 @@
+{
+  "name": "sandbox-vpc",
+  "cidr_block": "10.20.0.0/16",
+  "subnets": [
+    {
+      "cidr_block": "10.20.1.0/24",
+      "availability_zone": "us-east-1a",
+      "name": "public-web",
+      "is_public": true
+    },
+    {
+      "cidr_block": "10.20.2.0/24",
+      "availability_zone": "us-east-1b",
+      "name": "private-app"
+    },
+    {
+      "cidr_block": "10.20.3.0/24",
+      "availability_zone": "us-east-1c",
+      "name": "private-db"
+    }
+  ],
+  "tags": {
+    "CostCenter": "R&D",
+    "Owner": "platform-team",
+    "Purpose": "assignment-demo"
+  }
+}

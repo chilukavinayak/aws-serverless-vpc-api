@@ -1,0 +1,11 @@
+$kind: http-request
+name: Bad limit -> 400
+url: "{{apiEndpoint}}/vpcs?limit=500"
+method: GET
+queryParams:
+  limit: "500"
+scripts:
+  - type: afterResponse
+    code: pm.test('400', () => pm.response.to.have.status(400));
+    language: text/javascript
+order: 7000

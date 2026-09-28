@@ -1,0 +1,14 @@
+$kind: http-request
+name: Overlapping CIDR -> 409 (run after 1. Create VPC)
+url: "{{apiEndpoint}}/vpcs"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: '{ "name": "overlap", "cidr_block": "10.20.0.0/20", "subnets": [ { "cidr_block": "10.20.1.0/24" } ] }'
+scripts:
+  - type: afterResponse
+    code: pm.test('409 conflict', () => { pm.response.to.have.status(409); pm.expect(pm.response.json().error).to.eql('conflict'); });
+    language: text/javascript
+order: 4000

@@ -1,0 +1,14 @@
+$kind: http-request
+name: Subnet outside VPC -> 400
+url: "{{apiEndpoint}}/vpcs"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: '{ "name": "bad", "cidr_block": "10.30.0.0/16", "subnets": [ { "cidr_block": "10.31.1.0/24" } ] }'
+scripts:
+  - type: afterResponse
+    code: pm.test('400', () => pm.response.to.have.status(400));
+    language: text/javascript
+order: 3000

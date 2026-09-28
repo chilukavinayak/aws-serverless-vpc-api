@@ -1,0 +1,26 @@
+$kind: http-request
+url: "{{apiEndpoint}}/vpcs"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "name": "sandbox-vpc",
+      "cidr_block": "10.20.0.0/16",
+      "subnets": [
+        { "cidr_block": "10.20.1.0/24", "availability_zone": "us-east-1a", "name": "public-web", "is_public": true },
+        { "cidr_block": "10.20.2.0/24", "name": "private-app" }
+      ],
+      "tags": { "CostCenter": "R&D" }
+    }
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('201 created', () => pm.response.to.have.status(201));
+      const d = pm.response.json().data;
+      pm.collectionVariables.set('vpcId', d.vpc_id);
+      pm.test('aws vpc id returned', () => pm.expect(d.aws_vpc_id).to.match(/^vpc-/));
+    language: text/javascript
+order: 3000

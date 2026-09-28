@@ -1,0 +1,33 @@
+# Every deployment value. Nothing in template.yaml has a default.
+version = 0.1
+
+[default.global.parameters]
+stack_name = "allianz-vpc-provisioner-dev"
+region     = "us-east-1"
+
+[default.build.parameters]
+cached   = true
+parallel = true
+
+[default.deploy.parameters]
+capabilities      = "CAPABILITY_IAM"
+resolve_s3        = true
+confirm_changeset = false
+parameter_overrides = """
+  ProjectName=allianz-vpc-provisioner
+  Environment=dev
+  LogLevel=INFO
+  LogRetentionInDays=14
+  LambdaMemoryMB=512
+  LambdaTimeoutSeconds=30
+  EnableXRayTracing=false
+  EnablePointInTimeRecovery=false
+  EnableCustomMetrics=false
+  ApiThrottleBurstLimit=10
+  ApiThrottleRateLimit=0.17
+  CognitoPasswordMinLength=12
+  AllowedVpcCidrPrefix=10.
+  CognitoDomainPrefix=allianz-vpc-provisioner-dev
+  OAuthCallbackUrls=https://oauth.pstmn.io/v1/callback
+  BootstrapUserEmail=demo@example.com
+"""

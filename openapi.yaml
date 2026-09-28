@@ -1,0 +1,220 @@
+openapi: 3.0.3
+info:
+  title: aws-serverless-vpc-api
+  version: 1.0.0
+  description: |
+    REST API for provisioning AWS VPCs (with N subnets), persisting metadata in
+    DynamoDB, and retrieving records. Auth via Amazon Cognito.
+
+servers:
+  - url: https://{apiId}.execute-api.{region}.amazonaws.com/{stage}
+    variables:
+      apiId:  { default: abc123 }
+      region: { default: us-east-1 }
+      stage:  { default: dev }
+
+security:
+  - cognitoIdToken: []
+
+paths:
+  /vpcs:
+    post:
+      summary: Create a VPC with N subnets
+      operationId: createVpc
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateVpcRequest'
+            examples:
+              minimal:
+                value:
+                  name: sandbox-vpc
+                  cidr_block: 10.20.0.0/16
+                  subnets:
+                    - cidr_block: 10.20.1.0/24
+                      availability_zone: us-east-1a
+                      is_public: true
+                    - cidr_block: 10.20.2.0/24
+                      availability_zone: us-east-1b
+                  tags:
+                    CostCenter: R&D
+      responses:
+        '201':
+          description: VPC created
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/VpcRecord' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '502': { $ref: '#/components/responses/UpstreamError' }
+
+    get:
+      summary: List stored VPCs
+      operationId: listVpcs
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+        - in: query
+          name: cursor
+          schema: { type: string }
+        - in: query
+          name: scope
+          schema: { type: string, enum: [mine, all], default: mine }
+      responses:
+        '200':
+          description: List of VPC records
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/VpcRecord' }
+                  meta:
+                    type: object
+                    properties:
+                      count:       { type: integer }
+                      next_cursor: { type: string, nullable: true }
+                      scope:       { type: string, enum: [mine, all] }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /vpcs/{vpc_id}:
+    parameters:
+      - in: path
+        name: vpc_id
+        required: true
+        schema: { type: string }
+
+    get:
+      summary: Fetch a single VPC record
+      operationId: getVpc
+      responses:
+        '200':
+          description: The VPC record
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data: { $ref: '#/components/schemas/VpcRecord' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+    delete:
+      summary: Delete the AWS VPC and remove the record
+      operationId: deleteVpc
+      responses:
+        '204': { description: Deleted (idempotent). }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '502': { $ref: '#/components/responses/UpstreamError' }
+
+components:
+  securitySchemes:
+    cognitoIdToken:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Cognito ID token from the User Pool (Hosted UI or admin_initiate_auth).
+
+  schemas:
+    SubnetSpec:
+      type: object
+      required: [cidr_block]
+      properties:
+        cidr_block:        { type: string, example: 10.20.1.0/24 }
+        availability_zone: { type: string, nullable: true, example: us-east-1a }
+        name:              { type: string, nullable: true }
+        is_public:         { type: boolean, default: false }
+
+    SubnetRecord:
+      type: object
+      required: [subnet_id, cidr_block, availability_zone]
+      properties:
+        subnet_id:         { type: string, example: subnet-01ab }
+        cidr_block:        { type: string }
+        availability_zone: { type: string }
+        name:              { type: string, nullable: true }
+        is_public:         { type: boolean }
+
+    CreateVpcRequest:
+      type: object
+      required: [name, cidr_block, subnets]
+      properties:
+        name:       { type: string, minLength: 1, maxLength: 64 }
+        cidr_block: { type: string, description: IPv4 /16-/28 }
+        subnets:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: '#/components/schemas/SubnetSpec' }
+        tags:
+          type: object
+          additionalProperties: { type: string, maxLength: 256 }
+
+    VpcRecord:
+      type: object
+      properties:
+        vpc_id:     { type: string, format: uuid }
+        aws_vpc_id: { type: string, nullable: true }
+        name:       { type: string }
+        cidr_block: { type: string }
+        region:     { type: string }
+        owner_id:   { type: string, description: Cognito sub of the creator }
+        status:     { type: string, enum: [CREATING, ACTIVE, FAILED, DELETING, DELETED] }
+        created_at: { type: string, format: date-time }
+        subnets:
+          type: array
+          items: { $ref: '#/components/schemas/SubnetRecord' }
+        tags:
+          type: object
+          additionalProperties: { type: string }
+        request_id:    { type: string, nullable: true }
+        error_message: { type: string, nullable: true }
+
+    Error:
+      type: object
+      required: [error, message]
+      properties:
+        error:   { type: string, example: validation_error }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+
+  responses:
+    BadRequest:
+      description: Malformed request
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Missing or invalid Cognito ID token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: No such VPC record
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: CIDR overlap, DependencyViolation, or other conflict
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    UpstreamError:
+      description: AWS API failure — rollback attempted for POST
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

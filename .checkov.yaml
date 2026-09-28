@@ -1,0 +1,33 @@
+# Checks skipped on purpose. Each one either costs money (this deployment must
+# stay inside the always-free tier) or does not apply to a serverless API.
+quiet: true
+compact: true
+skip-check:
+  - CKV_AWS_28   # DynamoDB PITR: billed per GB; EnablePointInTimeRecovery flag exists for production
+  - CKV_AWS_119  # DynamoDB customer KMS key: $1/month; AWS-owned key encryption is on
+  - CKV_AWS_158  # CloudWatch log group KMS key: $1/month
+  - CKV_AWS_338  # 1-year log retention: log storage is billed; 14 days is configurable
+  - CKV_AWS_337  # SSM SecureString with customer KMS key: $1/month; AWS-managed key is used
+  - CKV_AWS_173  # Lambda env-var customer KMS key: $1/month; AWS-managed key is used
+  - CKV_AWS_115  # Lambda reserved concurrency: not settable on a new account (concurrency quota 10)
+  - CKV_AWS_116  # Lambda DLQ: functions are invoked synchronously by API Gateway; no async retries
+  - CKV_AWS_117  # Lambda in a VPC: the API only calls AWS APIs; a VPC would need NAT ($)
+  - CKV_AWS_73   # API Gateway X-Ray: billed beyond free tier; EnableXRayTracing flag exists
+  - CKV_AWS_76   # API Gateway access logging: Lambda logs already record every request
+  - CKV_AWS_120  # API Gateway caching: billed hourly
+  - CKV_AWS_111  # IAM write without constraints: ec2:CreateVpc/CreateSubnet cannot be scoped before the resource exists; deletes are tag-conditioned
+  - CKV_AWS_356  # IAM "*" resource: same as above, plus cognito-idp pool creation and CloudFormation ValidateTemplate have no resource ARN
+  - CKV_AWS_225  # API Gateway method caching: billed hourly (same as CKV_AWS_120)
+  - CKV2_AWS_4   # API Gateway execution logging: needs an account-level CloudWatch role; Lambda logs already record every request
+  - CKV_AWS_26   # SNS topic encryption: CloudWatch alarms cannot publish to a topic encrypted with the AWS-managed key; a customer key costs money
+  - CKV_AWS_18   # S3 access logging on the optional Terraform state bucket: a second bucket and log storage cost
+  - CKV2_AWS_62  # S3 event notifications on the optional state bucket: nothing consumes them
+  - CKV_AWS_272  # Lambda code signing: AWS Signer profile and signed artifacts are out of scope for this assignment
+  - CKV2_AWS_16  # DynamoDB autoscaling: capacity is fixed at the always-free 5/5 on purpose
+  - CKV2_AWS_29  # WAF on the API: $5/month minimum; throttling (10/min) and Cognito auth are the controls
+  - CKV2_AWS_34  # SSM SecureString for the four output parameters: they hold public identifiers, not secrets
+  - CKV2_AWS_51  # API Gateway client certificates: mutual TLS to a backend does not apply to Lambda proxy integration
+  - CKV2_AWS_53  # API Gateway request validation: every request body is validated in code with field-level messages
+  - CKV2_AWS_61  # S3 lifecycle on the optional Terraform state bucket: state must never expire
+  - CKV_AWS_144  # S3 cross-region replication on the optional state bucket: doubles storage cost
+  - CKV_AWS_145  # S3 KMS encryption on the optional state bucket: $1/month; SSE-S3 is on

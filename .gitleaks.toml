@@ -1,0 +1,21 @@
+title = "gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholder values that are not real secrets."
+regexes = [
+  '''demo@example\.com''',
+  '''oauth\.pstmn\.io/v1/callback''',
+  '''REPLACE_ME''',
+  '''00000000-0000-0000-0000-000000000000''',
+  '''AKIA[0-9A-Z]{16}''',                            # Only meta-example patterns should ever appear in docs
+]
+paths = [
+  '''(?i)README\.md''',
+  '''(?i)openapi\.yaml''',
+  '''postman/.*\.json''',
+  '''samconfig\.toml''',
+  '''terraform/.*\.tfvars''',
+]

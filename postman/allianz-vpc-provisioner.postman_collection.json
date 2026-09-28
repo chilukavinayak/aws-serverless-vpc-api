@@ -1,0 +1,535 @@
+{
+  "info": {
+    "_postman_id": "2d2285df-a008-4908-aba4-6b4c89a4d395",
+    "name": "allianz-vpc-provisioner",
+    "description": "Serverless VPC provisioning API.\n\n1. Set the collection variable `password` to the output of `make demo-password`.\n2. Run any request. A pre-request script signs in to Cognito when `idToken` is empty.\n\nRun the whole collection in order: Auth, VPCs (create/get/list), Edge cases (every error code, overlap uses the VPC just created), Cleanup (delete). The CI deploy job runs it with newman after every deploy.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "id": "a5be52f9-b024-486b-90bd-6b92cbaabb8c",
+      "name": "Auth",
+      "item": [
+        {
+          "id": "25d565ab-3afe-467e-af93-a87b92abc071",
+          "name": "Sign in (Cognito)",
+          "request": {
+            "description": "Exchanges the demo user's password for a Cognito ID token and stores it in {{idToken}}. Runs automatically before any other request when {{idToken}} is empty.",
+            "url": "https://cognito-idp.{{region}}.amazonaws.com",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/x-amz-json-1.1"
+              },
+              {
+                "key": "X-Amz-Target",
+                "value": "AWSCognitoIdentityProviderService.InitiateAuth"
+              }
+            ],
+            "method": "POST",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"AuthFlow\": \"USER_PASSWORD_AUTH\",\n  \"ClientId\": \"{{userPoolClientId}}\",\n  \"AuthParameters\": {\n    \"USERNAME\": \"{{username}}\",\n    \"PASSWORD\": \"{{password}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth",
+              "noauth": []
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "03dd6324-f2c6-4665-9df5-9c009345e595",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('signed in', () => pm.response.to.have.status(200));",
+                  "pm.collectionVariables.set('idToken', pm.response.json().AuthenticationResult.IdToken);"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "event": []
+    },
+    {
+      "id": "208d2f4b-affc-474e-afb3-b68435c44298",
+      "name": "VPCs",
+      "item": [
+        {
+          "id": "eae7de49-0ef5-42e8-a01e-e4d6528dbae2",
+          "name": "Create VPC",
+          "request": {
+            "description": "Creates a VPC with two subnets. Stores the returned id in {{vpcId}}.",
+            "url": "{{apiEndpoint}}/vpcs",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"sandbox-vpc\",\n  \"cidr_block\": \"10.20.0.0/16\",\n  \"subnets\": [\n    {\n      \"cidr_block\": \"10.20.1.0/24\",\n      \"availability_zone\": \"us-east-1a\",\n      \"name\": \"public-web\",\n      \"is_public\": true\n    },\n    {\n      \"cidr_block\": \"10.20.2.0/24\",\n      \"name\": \"private-app\"\n    }\n  ],\n  \"tags\": {\n    \"CostCenter\": \"R&D\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "cc3c3687-a834-4f41-8a95-d8e69da273ba",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 created', () => pm.response.to.have.status(201));",
+                  "const d = pm.response.json().data;",
+                  "pm.collectionVariables.set('vpcId', d.vpc_id);",
+                  "pm.test('AWS vpc id returned', () => pm.expect(d.aws_vpc_id).to.match(/^vpc-/));",
+                  "pm.test('status ACTIVE', () => pm.expect(d.status).to.eql('ACTIVE'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "a3c6dae1-16eb-4869-8c45-0024848693c8",
+          "name": "Get VPC",
+          "request": {
+            "description": "",
+            "url": "{{apiEndpoint}}/vpcs/{{vpcId}}",
+            "method": "GET"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "4b95acd2-bc08-4444-aa64-b7d107573977",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('same id', () => pm.expect(pm.response.json().data.vpc_id).to.eql(pm.collectionVariables.get('vpcId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "b263ebc2-ebf7-42dd-b191-df47eca58263",
+          "name": "List my VPCs",
+          "request": {
+            "description": "",
+            "url": "{{apiEndpoint}}/vpcs?scope=mine&limit=25",
+            "method": "GET"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "627ec7bf-0dc1-4bbd-800f-1f3107b939c6",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));",
+                  "pm.test('contains created vpc', () => pm.expect(pm.response.json().data.map(v => v.vpc_id)).to.include(pm.collectionVariables.get('vpcId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "73d0c952-5f0e-48de-a8df-98d1a1c9bda3",
+          "name": "List all VPCs",
+          "request": {
+            "description": "",
+            "url": "{{apiEndpoint}}/vpcs?scope=all&limit=100",
+            "method": "GET"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "5d6ea719-2d30-4fe2-b854-d506156b6833",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "event": []
+    },
+    {
+      "id": "9aa2dff0-fe78-4a8f-bdb6-6ef2154cac4b",
+      "name": "Edge cases",
+      "item": [
+        {
+          "id": "7f58b842-70e2-4732-801c-b5b0a31fbba7",
+          "name": "No token -> 401",
+          "request": {
+            "description": "",
+            "url": "{{apiEndpoint}}/vpcs",
+            "method": "GET",
+            "auth": {
+              "type": "noauth",
+              "noauth": []
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "fa937333-6098-46a4-bbc6-8da72b13d961",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401', () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "7fde3b37-b22f-42a4-9c11-57ef246b4bc0",
+          "name": "Invalid CIDR -> 400",
+          "request": {
+            "description": "",
+            "url": "{{apiEndpoint}}/vpcs",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"bad\",\n  \"cidr_block\": \"10.20.0.0/8\",\n  \"subnets\": [\n    {\n      \"cidr_block\": \"10.20.1.0/24\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "22f4add5-8ab8-4572-90ae-f6ddd1acc399",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 validation_error', () => { pm.response.to.have.status(400); pm.expect(pm.response.json().error).to.eql('validation_error'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "fef8ec15-a901-469a-8e96-21cc448a20ff",
+          "name": "Subnet outside VPC -> 400",
+          "request": {
+            "description": "",
+            "url": "{{apiEndpoint}}/vpcs",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"bad\",\n  \"cidr_block\": \"10.30.0.0/16\",\n  \"subnets\": [\n    {\n      \"cidr_block\": \"10.31.1.0/24\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "89a79f10-7ba1-43ec-9716-259a9cad52af",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "5a4de39b-6a3f-45bb-8434-ce499a0a06d0",
+          "name": "Duplicate subnet CIDR -> 400",
+          "request": {
+            "description": "",
+            "url": "{{apiEndpoint}}/vpcs",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"bad\",\n  \"cidr_block\": \"10.40.0.0/16\",\n  \"subnets\": [\n    {\n      \"cidr_block\": \"10.40.1.0/24\"\n    },\n    {\n      \"cidr_block\": \"10.40.1.0/24\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "031edc32-41e8-4ad7-980e-44bae5b58804",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "4dc38a71-56f9-4e4b-90be-598bdb089b9b",
+          "name": "Overlapping CIDR -> 409 (create a VPC first)",
+          "request": {
+            "description": "",
+            "url": "{{apiEndpoint}}/vpcs",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "method": "POST",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"overlap\",\n  \"cidr_block\": \"10.20.0.0/20\",\n  \"subnets\": [\n    {\n      \"cidr_block\": \"10.20.1.0/24\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "8dc932b3-6cea-4687-a575-8dafcb0de7de",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 conflict', () => { pm.response.to.have.status(409); pm.expect(pm.response.json().error).to.eql('conflict'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "164fca14-d735-4844-ac22-929c2a87ea75",
+          "name": "Unknown id -> 404",
+          "request": {
+            "description": "",
+            "url": "{{apiEndpoint}}/vpcs/00000000-0000-0000-0000-000000000000",
+            "method": "GET"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "d5491658-b619-48c9-971b-de91acd93d54",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "1d0ca820-1066-426e-8c19-d0f29bb07f94",
+          "name": "Delete unknown id -> 204",
+          "request": {
+            "description": "",
+            "url": "{{apiEndpoint}}/vpcs/00000000-0000-0000-0000-000000000000",
+            "method": "DELETE"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "b70e56c7-d257-4b58-b2d0-42a929dab085",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "id": "0cbb6fc0-ea24-4f6b-9b39-11b9b718527c",
+          "name": "Bad limit -> 400",
+          "request": {
+            "description": "",
+            "url": "{{apiEndpoint}}/vpcs?limit=500",
+            "method": "GET"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "0f6528e8-c1d1-4a08-b647-1d0947a81011",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "event": []
+    },
+    {
+      "id": "1bc787f4-fe30-4f60-bfcb-0a5fb990670b",
+      "name": "Cleanup",
+      "item": [
+        {
+          "id": "690b8064-c54c-443f-8305-5733bbd1373a",
+          "name": "Delete VPC",
+          "request": {
+            "description": "",
+            "url": "{{apiEndpoint}}/vpcs/{{vpcId}}",
+            "method": "DELETE"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "5f55ac22-abf8-454b-bd02-93beb723469b",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204', () => pm.response.to.have.status(204));",
+                  "pm.collectionVariables.set('vpcId', '');"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "event": []
+    }
+  ],
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "type": "string",
+        "value": "Authorization",
+        "key": "key"
+      },
+      {
+        "type": "string",
+        "value": "{{idToken}}",
+        "key": "value"
+      },
+      {
+        "type": "string",
+        "value": "header",
+        "key": "in"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (pm.info.requestName === 'Sign in (Cognito)' || pm.variables.get('idToken')) return;",
+          "if (!pm.variables.get('password')) { console.warn('password is empty: set it (make demo-password) or run Auth > Sign in'); return; }",
+          "pm.sendRequest({",
+          "  url: 'https://cognito-idp.' + pm.variables.get('region') + '.amazonaws.com',",
+          "  method: 'POST',",
+          "  header: { 'Content-Type': 'application/x-amz-json-1.1', 'X-Amz-Target': 'AWSCognitoIdentityProviderService.InitiateAuth' },",
+          "  body: { mode: 'raw', raw: JSON.stringify({ AuthFlow: 'USER_PASSWORD_AUTH', ClientId: pm.variables.get('userPoolClientId'),",
+          "    AuthParameters: { USERNAME: pm.variables.get('username'), PASSWORD: pm.variables.get('password') } }) }",
+          "}, (err, res) => {",
+          "  if (err || res.code !== 200) { console.error('Cognito sign-in failed', err || res.text()); return; }",
+          "  pm.collectionVariables.set('idToken', res.json().AuthenticationResult.IdToken);",
+          "});"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "apiEndpoint",
+      "value": "https://77jrhk1spb.execute-api.us-east-1.amazonaws.com/dev",
+      "type": "string"
+    },
+    {
+      "key": "region",
+      "value": "us-east-1",
+      "type": "string"
+    },
+    {
+      "key": "userPoolClientId",
+      "value": "7aitg14m51vukf8h2h2j6cr241",
+      "type": "string"
+    },
+    {
+      "key": "username",
+      "value": "demo@example.com",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "idToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "vpcId",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

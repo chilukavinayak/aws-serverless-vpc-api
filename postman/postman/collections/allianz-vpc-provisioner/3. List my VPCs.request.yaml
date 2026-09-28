@@ -1,0 +1,13 @@
+$kind: http-request
+url: "{{apiEndpoint}}/vpcs?scope=mine&limit=25"
+method: GET
+queryParams:
+  scope: mine
+  limit: "25"
+scripts:
+  - type: afterResponse
+    code: |-
+      pm.test('200', () => pm.response.to.have.status(200));
+      pm.test('contains created vpc', () => pm.expect(pm.response.json().data.map(v => v.vpc_id)).to.include(pm.collectionVariables.get('vpcId')));
+    language: text/javascript
+order: 5000

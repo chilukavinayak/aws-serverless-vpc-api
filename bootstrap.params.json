@@ -1,0 +1,26 @@
+[
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "allianz-vpc-provisioner"
+  },
+  {
+    "ParameterKey": "GitHubRepository",
+    "ParameterValue": "chilukavinayak/aws-serverless-vpc-api"
+  },
+  {
+    "ParameterKey": "GitHubOwnerId",
+    "ParameterValue": "18570701"
+  },
+  {
+    "ParameterKey": "GitHubRepositoryId",
+    "ParameterValue": "1392193728"
+  },
+  {
+    "ParameterKey": "GitHubBranch",
+    "ParameterValue": "main"
+  },
+  {
+    "ParameterKey": "CreateOidcProvider",
+    "ParameterValue": "true"
+  }
+]
